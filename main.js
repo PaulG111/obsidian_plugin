@@ -5860,6 +5860,11 @@ init_git_response_error();
 var simpleGit = gitInstanceFactory;
 
 // src/main.ts
+var DEFAULT_SETTINGS = {
+  gerritUrl: "",
+  username: "",
+  password: ""
+};
 var MyPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
@@ -5867,7 +5872,10 @@ var MyPlugin = class extends import_obsidian.Plugin {
   }
   async onload() {
     const basePath = this.app.vault.adapter.basePath;
+    await this.loadSettings();
     this.git = simpleGit(basePath);
+    const remoteUrl = `https://${this.settings.username}:${this.settings.password}@${this.settings.gerritUrl}`;
+    await this.git.remote(["set-url", "origin", remoteUrl]);
     const assetFolder = "image";
     if (!await this.app.vault.adapter.exists(assetFolder)) {
       await this.app.vault.createFolder(assetFolder);
@@ -5893,32 +5901,28 @@ var MyPlugin = class extends import_obsidian.Plugin {
       }
     });
     this.addRibbonIcon("save", "Sauvegarder", async () => {
-      try {
-        const status = await this.git.status();
-        if (status.files.length === 0) {
-          new import_obsidian.Notice("Aucune modification \xE0 sauvegarder");
-          return;
-        }
-        new CommitModal(this.app, async (message) => {
-          try {
-            await this.git.add("./*");
-            await this.git.commit(message);
-            await this.git.push("origin", `HEAD:refs/for/master`);
-            new import_obsidian.Notice("Documentation sauvegard\xE9e");
-          } catch (error) {
-            const msg = error.message ?? "";
-            if (msg.includes("Change-Id")) {
-              new import_obsidian.Notice("Hook commit-msg Gerrit manquant");
-            } else if (msg.includes("prohibited")) {
-              new import_obsidian.Notice("Push refus\xE9 par Gerrit \u2014 v\xE9rifiez vos droits sur cette branche");
-            } else {
-              new import_obsidian.Notice("Erreur lors de la sauvegarde : " + msg.slice(0, 80));
-            }
-          }
-        }).open();
-      } catch (error) {
-        new import_obsidian.Notice("Erreur lors de la sauvegarde Git");
+      const status = await this.git.status();
+      if (status.files.length === 0) {
+        new import_obsidian.Notice("Aucune modification \xE0 sauvegarder");
+        return;
       }
+      new CommitModal(this.app, async (message) => {
+        try {
+          await this.git.add("./*");
+          await this.git.commit(message);
+          await this.git.push("origin", `HEAD:refs/for/master`);
+          new import_obsidian.Notice("Documentation sauvegard\xE9e");
+        } catch (error) {
+          const msg = error.message ?? "";
+          if (msg.includes("Change-Id")) {
+            new import_obsidian.Notice("Hook commit-msg Gerrit manquant");
+          } else if (msg.includes("prohibited")) {
+            new import_obsidian.Notice("Push refus\xE9 par Gerrit, v\xE9rifiez vos droits sur cette branche");
+          } else {
+            new import_obsidian.Notice("Erreur lors de la sauvegarde : " + msg.slice(0, 80));
+          }
+        }
+      }).open();
     });
     this.addRibbonIcon("git-branch", "Changer de version", async () => {
       try {
@@ -5951,6 +5955,7 @@ var MyPlugin = class extends import_obsidian.Plugin {
         new import_obsidian.Notice("Impossible de r\xE9cup\xE9rer les branches Git");
       }
     });
+    this.addSettingTab(new MyPluginSettingTab(this.app, this));
   }
   async refreshBranchDisplay() {
     try {
@@ -5960,6 +5965,12 @@ var MyPlugin = class extends import_obsidian.Plugin {
     } catch {
       this.statusBarItem.setText("\u2387 ?");
     }
+  }
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
+  async saveSettings() {
+    await this.saveData(this.settings);
   }
 };
 var CommitModal = class extends import_obsidian.Modal {
@@ -6024,5 +6035,32 @@ var VersionModal = class extends import_obsidian.Modal {
   }
   onClose() {
     this.contentEl.empty();
+  }
+};
+var MyPluginSettingTab = class extends import_obsidian.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    new import_obsidian.Setting(containerEl).setName("URL gerrit").addText((text) => text.setValue(this.plugin.settings.gerritUrl).onChange(async (value) => {
+      this.plugin.settings.gerritUrl = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian.Setting(containerEl).setName("nom d'utilisateur").addText((text) => text.setValue(this.plugin.settings.username).onChange(async (value) => {
+      this.plugin.settings.username = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian.Setting(containerEl).setName("mot de passe").addText((text) => text.setValue(this.plugin.settings.password).onChange(async (value) => {
+      this.plugin.settings.password = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian.Setting(containerEl).addButton((btn) => btn.setButtonText("Connecter").onClick(async () => {
+      const remoteUrl = `https://${this.plugin.settings.username}:${this.plugin.settings.password}@${this.plugin.settings.gerritUrl}`;
+      await this.plugin.git.remote(["set-url", "origin", remoteUrl]);
+      new import_obsidian.Notice("connection configur\xE9e");
+    }));
   }
 };

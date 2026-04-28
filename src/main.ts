@@ -1,14 +1,29 @@
-import { Plugin, Notice, Modal, App } from 'obsidian';
+import {Plugin, Notice, Modal, App, PluginSettingTab, Setting } from 'obsidian';
 import { simpleGit, SimpleGit } from 'simple-git';
 
+
+interface MyPluginSettings {
+	gerritUrl: string;
+	username: string;
+	password: string;
+}
+const DEFAULT_SETTINGS: MyPluginSettings = {
+	gerritUrl: '',
+	username: '',
+	password: ''
+}
 export default class MyPlugin extends Plugin {
 	git: SimpleGit;
 	currentBranch: string = '';
 	statusBarItem: HTMLElement;
+	settings: MyPluginSettings;
 
 	async onload() {
 		const basePath = (this.app.vault.adapter as any).basePath;
+		await this.loadSettings();
 		this.git = simpleGit(basePath);
+		const remoteUrl = `https://${this.settings.username}:${this.settings.password}@${this.settings.gerritUrl}`;
+		await this.git.remote(['set-url', 'origin', remoteUrl]);
 
 		const assetFolder = "image";
 		if (!(await this.app.vault.adapter.exists(assetFolder))) {
@@ -38,7 +53,7 @@ export default class MyPlugin extends Plugin {
 		});
 
 		this.addRibbonIcon('save', 'Sauvegarder', async () => {
-			try {
+
 				const status = await this.git.status();
 				if (status.files.length === 0) {
 					new Notice("Aucune modification à sauvegarder");
@@ -56,15 +71,12 @@ export default class MyPlugin extends Plugin {
 						if (msg.includes('Change-Id')) {
 							new Notice("Hook commit-msg Gerrit manquant");
 						} else if (msg.includes('prohibited')) {
-							new Notice("Push refusé par Gerrit — vérifiez vos droits sur cette branche");
+							new Notice("Push refusé par Gerrit, vérifiez vos droits sur cette branche");
 						} else {
 							new Notice("Erreur lors de la sauvegarde : " + msg.slice(0, 80));
 						}
 					}
 				}).open();
-			} catch (error) {
-				new Notice("Erreur lors de la sauvegarde Git");
-			}
 		});
 
 		this.addRibbonIcon('git-branch', 'Changer de version', async () => {
@@ -103,6 +115,7 @@ export default class MyPlugin extends Plugin {
 				new Notice("Impossible de récupérer les branches Git");
 			}
 		});
+		this.addSettingTab(new MyPluginSettingTab(this.app, this));
 	}
 
 	async refreshBranchDisplay() {
@@ -113,6 +126,12 @@ export default class MyPlugin extends Plugin {
 		} catch {
 			this.statusBarItem.setText('⎇ ?');
 		}
+	}
+	async loadSettings(){
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	}
+	async saveSettings() {
+		await this.saveData(this.settings);
 	}
 }
 
@@ -154,7 +173,6 @@ class CommitModal extends Modal {
 		this.contentEl.empty();
 	}
 }
-
 class VersionModal extends Modal {
 	branches: string[];
 	currentBranch: string;
@@ -195,4 +213,49 @@ class VersionModal extends Modal {
 	onClose() {
 		this.contentEl.empty();
 	}
+}
+class MyPluginSettingTab extends PluginSettingTab {
+	plugin: MyPlugin;
+	constructor(app: App, plugin: MyPlugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+	display() {
+		const { containerEl } = this;
+		containerEl.empty();
+
+		new Setting(containerEl)
+			.setName('URL gerrit')
+			.addText(text => text
+				.setValue(this.plugin.settings.gerritUrl)
+				.onChange(async (value)=> {
+					this.plugin.settings.gerritUrl = value;
+					await this.plugin.saveSettings();
+				}));
+		new Setting(containerEl)
+			.setName('nom d\'utilisateur')
+			.addText(text => text
+				.setValue(this.plugin.settings.username)
+				.onChange(async (value)=> {
+					this.plugin.settings.username = value;
+					await this.plugin.saveSettings();
+				}));
+		new Setting(containerEl)
+			.setName('mot de passe')
+			.addText(text => text
+				.setValue(this.plugin.settings.password)
+				.onChange(async(value) => {
+					this.plugin.settings.password = value;
+					await this.plugin.saveSettings();
+				}));
+		new Setting(containerEl)
+			.addButton(btn => btn
+				.setButtonText('Connecter')
+				.onClick(async () => {
+					const remoteUrl = `https://${this.plugin.settings.username}:${this.plugin.settings.password}@${this.plugin.settings.gerritUrl}`;
+					await (this.plugin as any).git.remote(['set-url', 'origin', remoteUrl])
+					new Notice("connection configurée")
+		}));
+	}
+
 }
