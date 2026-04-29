@@ -19,9 +19,27 @@ export default class MyPlugin extends Plugin {
 	settings: MyPluginSettings;
 
 	async onload() {
+		try {
+			await simpleGit().version();
+		} catch (error) {
+			new Notice("git n'est pas installé sur ce PC, installer git avant d'utuliser ce plugin")
+		}
 		const basePath = (this.app.vault.adapter as any).basePath;
 		await this.loadSettings();
 		this.git = simpleGit(basePath);
+		const hookPath = `${basePath}/.git/hooks/commit-msg`;
+		const hookExists = await this.app.vault.adapter.exists('.git/hooks/commit-msg');
+		if (!hookExists) {
+			try {
+				const hookUrl = `https://${this.settings.gerritUrl.split('/')[0]}/tools/hooks/commit-msg`;
+				const response = await fetch(hookUrl);
+				const hookContent = await response.text();
+				require('fs').writeFileSync(hookPath, hookContent, { mode: 0o755});
+				new Notice("hook gerrit installé automatiquement");
+			} catch (error) {
+				new Notice("Impossible d'installer le hook Gerrit");
+			}
+		}
 		const remoteUrl = `https://${this.settings.username}:${this.settings.password}@${this.settings.gerritUrl}`;
 		await this.git.remote(['set-url', 'origin', remoteUrl]);
 
@@ -116,6 +134,18 @@ export default class MyPlugin extends Plugin {
 			}
 		});
 		this.addSettingTab(new MyPluginSettingTab(this.app, this));
+
+		this.addRibbonIcon('file-plus', 'Nouvelle page', () => {
+			new NewPageModal(this.app, async (lang, module, name) => {
+				const filePath = `${lang}/${module}/${name}.md`;
+				if (await this.app.vault.adapter.exists(filePath)) { new Notice ("Ce fichier existe deja"); return; }
+				if(!(await this.app.vault.adapter.exists(`${lang}/${module}`))) await this.app.vault.createFolder(`${lang}/${module}`);
+				await this.app.vault.create(filePath, `---lang: ${lang}\nmodule: ${module}\nversion: ${this.currentBranch}\n---\n\n# ${name}\n`);
+				const file = this.app.vault.getAbstractFileByPath(filePath);
+				if (file) await (this.app as any).workspace.getLeaf().openFile(file);
+				new Notice(`Page créée : ${filePath}`);
+			}).open();
+		});
 	}
 
 	async refreshBranchDisplay() {
@@ -250,12 +280,63 @@ class MyPluginSettingTab extends PluginSettingTab {
 				}));
 		new Setting(containerEl)
 			.addButton(btn => btn
-				.setButtonText('Connecter')
+				.setButtonText('connecter')
 				.onClick(async () => {
 					const remoteUrl = `https://${this.plugin.settings.username}:${this.plugin.settings.password}@${this.plugin.settings.gerritUrl}`;
-					await (this.plugin as any).git.remote(['set-url', 'origin', remoteUrl])
-					new Notice("connection configurée")
-		}));
+					const isGitRepo = await this.plugin.app.vault.adapter.exists('.git');
+					if (!isGitRepo) {
+						new Notice("Clonage du dépôt en cours...")
+						try {
+							const basePath = (this.plugin.app.vault.adapter as any).basePath
+							await simpleGit().clone(remoteUrl, basePath)
+							new Notice ("dépôt cloné avec succès");
+						} catch (error) {
+							const msg = (error as Error).message ?? '';
+							new Notice("Erreur lors du clonage : " + msg.slice(0,80));
+						}
+
+					} else {
+						await (this.plugin as any).git.remote(['set-url', 'origin', remoteUrl]);
+						new Notice ("connexion configurée")
+					}
+				}));
 	}
 
+}
+class NewPageModal extends Modal {
+	onConfirm: (lang: string, module: string, name: string) => void;
+
+	constructor(app: App, onConfirm: (lang: string, module: string, name: string) => void) {
+		super(app);
+		this.onConfirm = onConfirm;
+	}
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl("h2", {text: "nouvelle page"});
+
+		const langSelect = contentEl.createEl("select");
+		["FR", "EN", "DE", "ES"].forEach(lang => langSelect.createEl("option", { text: lang, value: lang}));
+
+		const moduleInput = contentEl.createEl("input", { type: "text" });
+		moduleInput.placeholder = "Module (ex: optical-patient-file";
+
+		const nameInput = contentEl.createEl("input", { type: "text" });
+		nameInput.placeholder = "nom de la page (ex: introduction)";
+
+		const preview = contentEl.createEl("p")
+		const updatePreview = () => preview.setText(`chemin : ${langSelect.value}/${moduleInput.value.trim() || "module"}/${nameInput.value.trim() || "page"}.md`);
+		updatePreview();
+
+		langSelect.onchange = moduleInput.oninput = nameInput.oninput = updatePreview;
+
+		const btn = contentEl.createEl("button", { text: "Créer"});
+		btn.onclick = () => {
+			if (!moduleInput.value.trim()) { new Notice("module vide"); return; }
+			if(!nameInput.value.trim()) { new Notice("Nom vide"); return; }
+			this.onConfirm(langSelect.value, moduleInput.value.trim(), nameInput.value.trim());
+			this.close();
+		};
+		moduleInput.focus();
+	}
+	onClose() { this.contentEl.empty(); }
 }

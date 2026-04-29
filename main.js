@@ -5871,9 +5871,27 @@ var MyPlugin = class extends import_obsidian.Plugin {
     this.currentBranch = "";
   }
   async onload() {
+    try {
+      await simpleGit().version();
+    } catch (error) {
+      new import_obsidian.Notice("git n'est pas install\xE9 sur ce PC, installer git avant d'utuliser ce plugin");
+    }
     const basePath = this.app.vault.adapter.basePath;
     await this.loadSettings();
     this.git = simpleGit(basePath);
+    const hookPath = `${basePath}/.git/hooks/commit-msg`;
+    const hookExists = await this.app.vault.adapter.exists(".git/hooks/commit-msg");
+    if (!hookExists) {
+      try {
+        const hookUrl = `https://${this.settings.gerritUrl.split("/")[0]}/tools/hooks/commit-msg`;
+        const response = await fetch(hookUrl);
+        const hookContent = await response.text();
+        require("fs").writeFileSync(hookPath, hookContent, { mode: 493 });
+        new import_obsidian.Notice("hook gerrit install\xE9 automatiquement");
+      } catch (error) {
+        new import_obsidian.Notice("Impossible d'installer le hook Gerrit");
+      }
+    }
     const remoteUrl = `https://${this.settings.username}:${this.settings.password}@${this.settings.gerritUrl}`;
     await this.git.remote(["set-url", "origin", remoteUrl]);
     const assetFolder = "image";
@@ -5956,6 +5974,26 @@ var MyPlugin = class extends import_obsidian.Plugin {
       }
     });
     this.addSettingTab(new MyPluginSettingTab(this.app, this));
+    this.addRibbonIcon("file-plus", "Nouvelle page", () => {
+      new NewPageModal(this.app, async (lang, module2, name) => {
+        const filePath = `${lang}/${module2}/${name}.md`;
+        if (await this.app.vault.adapter.exists(filePath)) {
+          new import_obsidian.Notice("Ce fichier existe deja");
+          return;
+        }
+        if (!await this.app.vault.adapter.exists(`${lang}/${module2}`)) await this.app.vault.createFolder(`${lang}/${module2}`);
+        await this.app.vault.create(filePath, `---lang: ${lang}
+module: ${module2}
+version: ${this.currentBranch}
+---
+
+# ${name}
+`);
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (file) await this.app.workspace.getLeaf().openFile(file);
+        new import_obsidian.Notice(`Page cr\xE9\xE9e : ${filePath}`);
+      }).open();
+    });
   }
   async refreshBranchDisplay() {
     try {
@@ -6057,10 +6095,60 @@ var MyPluginSettingTab = class extends import_obsidian.PluginSettingTab {
       this.plugin.settings.password = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).addButton((btn) => btn.setButtonText("Connecter").onClick(async () => {
+    new import_obsidian.Setting(containerEl).addButton((btn) => btn.setButtonText("connecter").onClick(async () => {
       const remoteUrl = `https://${this.plugin.settings.username}:${this.plugin.settings.password}@${this.plugin.settings.gerritUrl}`;
-      await this.plugin.git.remote(["set-url", "origin", remoteUrl]);
-      new import_obsidian.Notice("connection configur\xE9e");
+      const isGitRepo = await this.plugin.app.vault.adapter.exists(".git");
+      if (!isGitRepo) {
+        new import_obsidian.Notice("Clonage du d\xE9p\xF4t en cours...");
+        try {
+          const basePath = this.plugin.app.vault.adapter.basePath;
+          await simpleGit().clone(remoteUrl, basePath);
+          new import_obsidian.Notice("d\xE9p\xF4t clon\xE9 avec succ\xE8s");
+        } catch (error) {
+          const msg = error.message ?? "";
+          new import_obsidian.Notice("Erreur lors du clonage : " + msg.slice(0, 80));
+        }
+      } else {
+        await this.plugin.git.remote(["set-url", "origin", remoteUrl]);
+        new import_obsidian.Notice("connexion configur\xE9e");
+      }
     }));
+  }
+};
+var NewPageModal = class extends import_obsidian.Modal {
+  constructor(app, onConfirm) {
+    super(app);
+    this.onConfirm = onConfirm;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h2", { text: "nouvelle page" });
+    const langSelect = contentEl.createEl("select");
+    ["FR", "EN", "DE", "ES"].forEach((lang) => langSelect.createEl("option", { text: lang, value: lang }));
+    const moduleInput = contentEl.createEl("input", { type: "text" });
+    moduleInput.placeholder = "Module (ex: optical-patient-file";
+    const nameInput = contentEl.createEl("input", { type: "text" });
+    nameInput.placeholder = "nom de la page (ex: introduction)";
+    const preview = contentEl.createEl("p");
+    const updatePreview = () => preview.setText(`chemin : ${langSelect.value}/${moduleInput.value.trim() || "module"}/${nameInput.value.trim() || "page"}.md`);
+    updatePreview();
+    langSelect.onchange = moduleInput.oninput = nameInput.oninput = updatePreview;
+    const btn = contentEl.createEl("button", { text: "Cr\xE9er" });
+    btn.onclick = () => {
+      if (!moduleInput.value.trim()) {
+        new import_obsidian.Notice("module vide");
+        return;
+      }
+      if (!nameInput.value.trim()) {
+        new import_obsidian.Notice("Nom vide");
+        return;
+      }
+      this.onConfirm(langSelect.value, moduleInput.value.trim(), nameInput.value.trim());
+      this.close();
+    };
+    moduleInput.focus();
+  }
+  onClose() {
+    this.contentEl.empty();
   }
 };
