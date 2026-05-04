@@ -22,7 +22,7 @@ export default class MyPlugin extends Plugin {
 		try {
 			await simpleGit().version();
 		} catch (error) {
-			new Notice("git n'est pas installé sur ce PC, installer git avant d'utuliser ce plugin")
+			new Notice("git n'est pas installé sur ce PC, installer git avant d'utiliser ce plugin")
 		}
 		const basePath = (this.app.vault.adapter as any).basePath;
 		await this.loadSettings();
@@ -140,7 +140,7 @@ export default class MyPlugin extends Plugin {
 				const filePath = `${lang}/${module}/${name}.md`;
 				if (await this.app.vault.adapter.exists(filePath)) { new Notice ("Ce fichier existe deja"); return; }
 				if(!(await this.app.vault.adapter.exists(`${lang}/${module}`))) await this.app.vault.createFolder(`${lang}/${module}`);
-				await this.app.vault.create(filePath, `---lang: ${lang}\nmodule: ${module}\nversion: ${this.currentBranch}\n---\n\n# ${name}\n`);
+				await this.app.vault.create(filePath, `---\nlang: ${lang}\nmodule: ${module}\nversion: ${this.currentBranch}\n---\n\n# ${name}\n`);
 				const file = this.app.vault.getAbstractFileByPath(filePath);
 				if (file) await (this.app as any).workspace.getLeaf().openFile(file);
 				new Notice(`Page créée : ${filePath}`);
@@ -315,12 +315,15 @@ class NewPageModal extends Modal {
 		contentEl.createEl("h2", {text: "nouvelle page"});
 
 		const langSelect = contentEl.createEl("select");
+		langSelect.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;font-size:14px;";
 		["FR", "EN", "DE", "ES"].forEach(lang => langSelect.createEl("option", { text: lang, value: lang}));
 
 		const moduleInput = contentEl.createEl("input", { type: "text" });
-		moduleInput.placeholder = "Module (ex: optical-patient-file";
+		moduleInput.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;font-size:14px;";
+		moduleInput.placeholder = "Module (ex: optical-patient-file)";
 
 		const nameInput = contentEl.createEl("input", { type: "text" });
+		nameInput.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;font-size:14px;";
 		nameInput.placeholder = "nom de la page (ex: introduction)";
 
 		const preview = contentEl.createEl("p")
@@ -330,6 +333,7 @@ class NewPageModal extends Modal {
 		langSelect.onchange = moduleInput.oninput = nameInput.oninput = updatePreview;
 
 		const btn = contentEl.createEl("button", { text: "Créer"});
+		btn.style.cssText= "display:block;width:100%;padding:8px;cursor:pointer;margin-top:8px;";
 		btn.onclick = () => {
 			if (!moduleInput.value.trim()) { new Notice("module vide"); return; }
 			if(!nameInput.value.trim()) { new Notice("Nom vide"); return; }

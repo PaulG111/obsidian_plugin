@@ -6124,16 +6124,20 @@ var NewPageModal = class extends import_obsidian.Modal {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "nouvelle page" });
     const langSelect = contentEl.createEl("select");
+    langSelect.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;front-size:14px;";
     ["FR", "EN", "DE", "ES"].forEach((lang) => langSelect.createEl("option", { text: lang, value: lang }));
     const moduleInput = contentEl.createEl("input", { type: "text" });
+    moduleInput.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;front-size:14px;";
     moduleInput.placeholder = "Module (ex: optical-patient-file";
     const nameInput = contentEl.createEl("input", { type: "text" });
+    nameInput.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;front-size:14px;";
     nameInput.placeholder = "nom de la page (ex: introduction)";
     const preview = contentEl.createEl("p");
     const updatePreview = () => preview.setText(`chemin : ${langSelect.value}/${moduleInput.value.trim() || "module"}/${nameInput.value.trim() || "page"}.md`);
     updatePreview();
     langSelect.onchange = moduleInput.oninput = nameInput.oninput = updatePreview;
     const btn = contentEl.createEl("button", { text: "Cr\xE9er" });
+    btn.style.cssText = "display:block;width:100%;padding:8px;cursor:pointer;margin-top:8px;";
     btn.onclick = () => {
       if (!moduleInput.value.trim()) {
         new import_obsidian.Notice("module vide");
