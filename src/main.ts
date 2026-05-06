@@ -22,7 +22,7 @@ export default class MyPlugin extends Plugin {
 		try {
 			await simpleGit().version();
 		} catch (error) {
-			new Notice("git n'est pas installé sur ce PC, installer git avant d'utiliser ce plugin")
+			new Notice("Git not found. Please install Git to use this plugin")
 		}
 		const basePath = (this.app.vault.adapter as any).basePath;
 		await this.loadSettings();
@@ -35,9 +35,9 @@ export default class MyPlugin extends Plugin {
 				const response = await fetch(hookUrl);
 				const hookContent = await response.text();
 				require('fs').writeFileSync(hookPath, hookContent, { mode: 0o755});
-				new Notice("hook gerrit installé automatiquement");
+				new Notice("Gerrit hook has been installed");
 			} catch (error) {
-				new Notice("Impossible d'installer le hook Gerrit");
+				new Notice("Gerrit hook installation failed");
 			}
 		}
 		const remoteUrl = `https://${this.settings.username}:${this.settings.password}@${this.settings.gerritUrl}`;
@@ -52,29 +52,29 @@ export default class MyPlugin extends Plugin {
 		this.statusBarItem = this.addStatusBarItem();
 		await this.refreshBranchDisplay();
 
-		this.addRibbonIcon('install', 'Récupérer', async () => {
+		this.addRibbonIcon('install', 'Update', async () => {
 			try {
-				new Notice("Synchronisation en cours...");
+				new Notice("Syncing...");
 				await this.git.pull('origin', this.currentBranch);
-				new Notice("Documentation mise à jour");
+				new Notice("Documentation has been updated");
 				await this.refreshBranchDisplay();
 			} catch (error) {
 				const msg = (error as Error).message ?? '';
 				if (msg.includes('conflict')) {
-					new Notice("Conflit détecté");
+					new Notice("Conflict detected");
 				} else if (msg.includes('Authentication')) {
-					new Notice("erreur d'authentification Git");
+					new Notice("Git authentication failed");
 				} else {
-					new Notice("Erreur lors de la mise à jour : " + msg.slice(0, 80));
+					new Notice("Update failed : " + msg.slice(0, 80));
 				}
 			}
 		});
 
-		this.addRibbonIcon('save', 'Sauvegarder', async () => {
+		this.addRibbonIcon('save', 'Save', async () => {
 
 				const status = await this.git.status();
 				if (status.files.length === 0) {
-					new Notice("Aucune modification à sauvegarder");
+					new Notice("No changes to save");
 					return;
 				}
 
@@ -83,35 +83,38 @@ export default class MyPlugin extends Plugin {
 						await this.git.add("./*");
 						await this.git.commit(message);
 						await this.git.push('origin', `HEAD:refs/for/master`);
-						new Notice("Documentation sauvegardée");
+						new Notice("Documentation has been saved");
 					} catch (error) {
 						const msg = (error as Error).message ?? '';
 						if (msg.includes('Change-Id')) {
-							new Notice("Hook commit-msg Gerrit manquant");
+							new Notice("Missing Gerrit commit-msg hook");
 						} else if (msg.includes('prohibited')) {
-							new Notice("Push refusé par Gerrit, vérifiez vos droits sur cette branche");
+							new Notice("Gerrit: Push rejected. Check branch permissions");
 						} else {
-							new Notice("Erreur lors de la sauvegarde : " + msg.slice(0, 80));
+							new Notice("Save error : " + msg.slice(0, 80));
 						}
 					}
 				}).open();
 		});
 
-		this.addRibbonIcon('git-branch', 'Changer de version', async () => {
+		this.addRibbonIcon('git-branch', 'Switch version', async () => {
 			try {
-				const branchSummary = await this.git.branch(['-a']);
+				await this.git.fetch();
+				const branchSummary = await this.git.branch(['-r']);
 				const branches = branchSummary.all
-					.map(b => b.replace('remotes/origin/', '').trim())
+					.map(b => b.replace('origin/', '').trim())
 					.filter(b => !b.includes('HEAD') && !b.includes('->'))
 					.filter((b, i, arr) => arr.indexOf(b) === i);
 
+
+
 				new VersionModal(this.app, branches, this.currentBranch, async (selectedBranch) => {
-					new Notice(`Changement vers ${selectedBranch}...`);
+					new Notice(`Switching to ${selectedBranch}...`);
 					try {
 						const status = await this.git.status();
 						const relevantFiles = status.files.filter(f => !f.path.startsWith('.obsidian/'));
 						if (relevantFiles.length > 0) {
-							new Notice("Sauvegardez vos modifications avant de changer de version");
+							new Notice("Save your changes before switching versions");
 							return;
 						}
 
@@ -119,31 +122,31 @@ export default class MyPlugin extends Plugin {
 						this.currentBranch = selectedBranch;
 						this.statusBarItem.setText(`⎇ ${selectedBranch}`);
 						await new Promise(resolve => setTimeout(resolve, 300));
-						new Notice(`Version ${selectedBranch} activée`);
+						new Notice(`Version ${selectedBranch} active`);
 					} catch (err) {
 						const msg = (err as Error).message ?? '';
 						if (msg.includes('modified')) {
-							new Notice("Sauvegardez vos modifications d'abord");
+							new Notice("Save your changes first");
 						} else {
-							new Notice("Erreur checkout : " + msg.slice(0, 80));
+							new Notice("Checkout error : " + msg.slice(0, 80));
 						}
 					}
 				}).open();
 			} catch (error) {
-				new Notice("Impossible de récupérer les branches Git");
+				new Notice("Unable to fetch Git branches");
 			}
 		});
 		this.addSettingTab(new MyPluginSettingTab(this.app, this));
 
-		this.addRibbonIcon('file-plus', 'Nouvelle page', () => {
+		this.addRibbonIcon('file-plus', 'New page', () => {
 			new NewPageModal(this.app, async (lang, module, name) => {
-				const filePath = `${lang}/${module}/${name}.md`;
-				if (await this.app.vault.adapter.exists(filePath)) { new Notice ("Ce fichier existe deja"); return; }
-				if(!(await this.app.vault.adapter.exists(`${lang}/${module}`))) await this.app.vault.createFolder(`${lang}/${module}`);
-				await this.app.vault.create(filePath, `---\nlang: ${lang}\nmodule: ${module}\nversion: ${this.currentBranch}\n---\n\n# ${name}\n`);
+				const filePath = `${module}/${name}.${lang}.md`;
+				if (await this.app.vault.adapter.exists(filePath)) { new Notice("File already exists"); return; }
+				if(!(await this.app.vault.adapter.exists(module))) await this.app.vault.createFolder(module);
+				await this.app.vault.create(filePath, `---\nlang: ${lang}\nmodule: ${module}\nversion: ${this.currentBranch}\n---\n\n`);
 				const file = this.app.vault.getAbstractFileByPath(filePath);
 				if (file) await (this.app as any).workspace.getLeaf().openFile(file);
-				new Notice(`Page créée : ${filePath}`);
+				new Notice(`New page created : ${filePath}`);
 			}).open();
 		});
 	}
@@ -175,19 +178,19 @@ class CommitModal extends Modal {
 
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl("h2", { text: "Message de sauvegarde" });
+		contentEl.createEl("h2", { text: "Save message" });
 
 		const input = contentEl.createEl("input", { type: "text" });
 		input.style.cssText = "width:100%;margin:12px 0;padding:6px;font-size:14px;";
-		input.placeholder = "Décrivez vos modifications...";
+		input.placeholder = "Describe your changes...";
 		input.focus();
 
-		const btn = contentEl.createEl("button", { text: "Sauvegarder" });
+		const btn = contentEl.createEl("button", { text: "Save" });
 		btn.style.cssText = "width:100%;padding:8px;cursor:pointer;margin-top:4px;";
 		btn.onclick = () => {
 			const message = input.value.trim();
 			if (!message) {
-				new Notice("Le message ne peut pas être vide");
+				new Notice("Message can't be empty");
 				return;
 			}
 			this.onConfirm(message);
@@ -217,9 +220,9 @@ class VersionModal extends Modal {
 
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl("h2", { text: "Choisir une version" });
+		contentEl.createEl("h2", { text: "Select a version" });
 		contentEl.createEl("p", {
-			text: `Version active : ${this.currentBranch}`,
+			text: `Active version : ${this.currentBranch}`,
 			cls: "setting-item-description"
 		});
 
@@ -255,7 +258,7 @@ class MyPluginSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName('URL gerrit')
+			.setName('gerrit URL')
 			.addText(text => text
 				.setValue(this.plugin.settings.gerritUrl)
 				.onChange(async (value)=> {
@@ -263,7 +266,7 @@ class MyPluginSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 		new Setting(containerEl)
-			.setName('nom d\'utilisateur')
+			.setName('username')
 			.addText(text => text
 				.setValue(this.plugin.settings.username)
 				.onChange(async (value)=> {
@@ -271,33 +274,36 @@ class MyPluginSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 		new Setting(containerEl)
-			.setName('mot de passe')
-			.addText(text => text
-				.setValue(this.plugin.settings.password)
-				.onChange(async(value) => {
+			.setName('password')
+			.addText(text => {
+				text.inputEl.type = 'password';
+				text.setValue(this.plugin.settings.password);
+				text.onChange(async (value: string) => {
 					this.plugin.settings.password = value;
 					await this.plugin.saveSettings();
-				}));
+				});
+			});
+
 		new Setting(containerEl)
 			.addButton(btn => btn
-				.setButtonText('connecter')
+				.setButtonText('login')
 				.onClick(async () => {
 					const remoteUrl = `https://${this.plugin.settings.username}:${this.plugin.settings.password}@${this.plugin.settings.gerritUrl}`;
 					const isGitRepo = await this.plugin.app.vault.adapter.exists('.git');
 					if (!isGitRepo) {
-						new Notice("Clonage du dépôt en cours...")
+						new Notice("Cloning repository...")
 						try {
 							const basePath = (this.plugin.app.vault.adapter as any).basePath
 							await simpleGit().clone(remoteUrl, basePath)
-							new Notice ("dépôt cloné avec succès");
+							new Notice ("Repository cloned");
 						} catch (error) {
 							const msg = (error as Error).message ?? '';
-							new Notice("Erreur lors du clonage : " + msg.slice(0,80));
+							new Notice("Cloning failed : " + msg.slice(0,80));
 						}
 
 					} else {
 						await (this.plugin as any).git.remote(['set-url', 'origin', remoteUrl]);
-						new Notice ("connexion configurée")
+						new Notice ("Login settings saved")
 					}
 				}));
 	}
@@ -312,32 +318,37 @@ class NewPageModal extends Modal {
 	}
 	onOpen() {
 		const { contentEl } = this;
-		contentEl.createEl("h2", {text: "nouvelle page"});
+		contentEl.createEl("h2", {text: "New page"});
 
-		const langSelect = contentEl.createEl("select");
-		langSelect.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;font-size:14px;";
-		["FR", "EN", "DE", "ES"].forEach(lang => langSelect.createEl("option", { text: lang, value: lang}));
+		const langInput = contentEl.createEl("input", { type: "text" });
+		langInput.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;font-size:14px;";
+		langInput.placeholder = "Language (ex: fr, en, es...)";
+		langInput.maxLength = 2;
 
 		const moduleInput = contentEl.createEl("input", { type: "text" });
 		moduleInput.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;font-size:14px;";
-		moduleInput.placeholder = "Module (ex: optical-patient-file)";
+		moduleInput.placeholder = "Section (ex: optical-patient-file)";
 
 		const nameInput = contentEl.createEl("input", { type: "text" });
 		nameInput.style.cssText = "display:block;width:100%;margin-bottom:12px;padding:6px;font-size:14px;";
-		nameInput.placeholder = "nom de la page (ex: introduction)";
+		nameInput.placeholder = "Page name (ex: introduction)";
 
 		const preview = contentEl.createEl("p")
-		const updatePreview = () => preview.setText(`chemin : ${langSelect.value}/${moduleInput.value.trim() || "module"}/${nameInput.value.trim() || "page"}.md`);
+		const updatePreview = () => preview.setText(`path : ${moduleInput.value.trim() || "module"}/${nameInput.value.trim() || "page"}.${langInput.value.toLowerCase().trim() || "lang"}.md`);
 		updatePreview();
 
-		langSelect.onchange = moduleInput.oninput = nameInput.oninput = updatePreview;
+		langInput.oninput = moduleInput.oninput = nameInput.oninput = updatePreview;
 
-		const btn = contentEl.createEl("button", { text: "Créer"});
+		const btn = contentEl.createEl("button", { text: "Add"});
 		btn.style.cssText= "display:block;width:100%;padding:8px;cursor:pointer;margin-top:8px;";
 		btn.onclick = () => {
-			if (!moduleInput.value.trim()) { new Notice("module vide"); return; }
-			if(!nameInput.value.trim()) { new Notice("Nom vide"); return; }
-			this.onConfirm(langSelect.value, moduleInput.value.trim(), nameInput.value.trim());
+			if (!moduleInput.value.trim()) { new Notice("Untitled section"); return; }
+			if(!nameInput.value.trim()) { new Notice("Untitled page"); return; }
+			if (!langInput.value.trim() || langInput.value.trim().length !== 2) {
+				new Notice("ISO Language Code (2 characters");
+				return;
+			}
+			this.onConfirm(langInput.value.toLowerCase().trim(), moduleInput.value.trim(), nameInput.value.trim());
 			this.close();
 		};
 		moduleInput.focus();
